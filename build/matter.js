@@ -1,5 +1,5 @@
 /**
-* matter-js 0.12.0 by @liabru 2017-02-02
+* matter-js 0.12.0 by @liabru 2017-07-03
 * http://brm.io/matter-js/
 * License MIT
 */
@@ -7,7 +7,7 @@
 /**
  * The MIT License (MIT)
  * 
- * Copyright (c) 2014 Liam Brummitt
+ * Copyright (c) Liam Brummitt and contributors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -185,7 +185,7 @@ var Axes = _dereq_('../geometry/Axes');
 
         // render properties
         var defaultFillStyle = (body.isStatic ? '#2e2b44' : Common.choose(['#006BA6', '#0496FF', '#FFBC42', '#D81159', '#8F2D56'])),
-            defaultStrokeStyle = Common.shadeColor(defaultFillStyle, -20);
+            defaultStrokeStyle = '#000';
         body.render.fillStyle = body.render.fillStyle || defaultFillStyle;
         body.render.strokeStyle = body.render.strokeStyle || defaultStrokeStyle;
         body.render.sprite.xOffset += -(body.bounds.min.x - body.position.x) / (body.bounds.max.x - body.bounds.min.x);
@@ -627,6 +627,7 @@ var Axes = _dereq_('../geometry/Axes');
                 Vertices.rotate(part.vertices, body.angularVelocity, body.position);
                 Axes.rotate(part.axes, body.angularVelocity);
                 if (i > 0) {
+                    part.angle += body.angularVelocity;
                     Vector.rotateAbout(part.position, body.angularVelocity, body.position, part.position);
                 }
             }
@@ -657,6 +658,7 @@ var Axes = _dereq_('../geometry/Axes');
      * @return {}
      */
     var _totalProperties = function(body) {
+        // from equations at:
         // https://ecourses.ou.edu/cgi-bin/ebook.cgi?doc=&topic=st&chap_sec=07.2&page=theory
         // http://output.to/sideway/default.asp?qno=121100087
 
@@ -1140,7 +1142,7 @@ var Axes = _dereq_('../geometry/Axes');
      *
      * @property render.lineWidth
      * @type number
-     * @default 1.5
+     * @default 0
      */
 
     /**
@@ -4139,6 +4141,7 @@ module.exports = Common;
 
     Common._nextId = 0;
     Common._seed = 0;
+    Common._nowStartTime = +(new Date());
 
     /**
      * Extends the object in the first argument using the object in the second argument.
@@ -4269,25 +4272,6 @@ module.exports = Common;
     };
 
     /**
-     * Returns a hex colour string made by lightening or darkening color by percent.
-     * @method shadeColor
-     * @param {string} color
-     * @param {number} percent
-     * @return {string} A hex colour
-     */
-    Common.shadeColor = function(color, percent) {   
-        // http://stackoverflow.com/questions/5560248/programmatically-lighten-or-darken-a-hex-color
-        var colorInteger = parseInt(color.slice(1),16), 
-            amount = Math.round(2.55 * percent), 
-            R = (colorInteger >> 16) + amount, 
-            B = (colorInteger >> 8 & 0x00FF) + amount, 
-            G = (colorInteger & 0x0000FF) + amount;
-        return "#" + (0x1000000 + (R < 255 ? R < 1 ? 0 : R :255) * 0x10000 
-                + (B < 255 ? B < 1 ? 0 : B : 255) * 0x100 
-                + (G < 255 ? G < 1 ? 0 : G : 255)).toString(16).slice(1);
-    };
-
-    /**
      * Shuffles the given array in-place.
      * The function uses a seeded random generator.
      * @method shuffle
@@ -4322,15 +4306,7 @@ module.exports = Common;
      * @return {boolean} True if the object is a HTMLElement, otherwise false
      */
     Common.isElement = function(obj) {
-        // http://stackoverflow.com/questions/384286/javascript-isdom-how-do-you-check-if-a-javascript-object-is-a-dom-object
-        try {
-            return obj instanceof HTMLElement;
-        }
-        catch(e){
-            return (typeof obj==="object") &&
-              (obj.nodeType===1) && (typeof obj.style === "object") &&
-              (typeof obj.ownerDocument ==="object");
-        }
+        return obj instanceof HTMLElement;
     };
 
     /**
@@ -4400,26 +4376,21 @@ module.exports = Common;
     };
     
     /**
-     * Returns the current timestamp (high-res if available).
+     * Returns the current timestamp since the time origin (e.g. from page load).
+     * The result will be high-resolution including decimal places if available.
      * @method now
-     * @return {number} the current timestamp (high-res if available)
+     * @return {number} the current timestamp
      */
     Common.now = function() {
-        // http://stackoverflow.com/questions/221294/how-do-you-get-a-timestamp-in-javascript
-        // https://gist.github.com/davidwaterston/2982531
+        if (window.performance) {
+            if (window.performance.now) {
+                return window.performance.now();
+            } else if (window.performance.webkitNow) {
+                return window.performance.webkitNow();
+            }
+        }
 
-        var performance = window.performance || {};
-
-        performance.now = (function() {
-            return performance.now    ||
-            performance.webkitNow     ||
-            performance.msNow         ||
-            performance.oNow          ||
-            performance.mozNow        ||
-            function() { return +(new Date()); };
-        })();
-              
-        return performance.now();
+        return (new Date()) - Common._nowStartTime;
     };
     
     /**
@@ -4437,7 +4408,7 @@ module.exports = Common;
     };
 
     var _seededRandom = function() {
-        // https://gist.github.com/ngryman/3830489
+        // https://en.wikipedia.org/wiki/Linear_congruential_generator
         Common._seed = (Common._seed * 9301 + 49297) % 233280;
         return Common._seed / 233280;
     };
@@ -4569,7 +4540,9 @@ module.exports = Common;
      * @return {array} Partially ordered set of vertices in topological order.
      */
     Common.topologicalSort = function(graph) {
-        // https://mgechev.github.io/javascript-algorithms/graphs_others_topological-sort.js.html
+        // https://github.com/mgechev/javascript-algorithms
+        // Copyright (c) Minko Gechev (MIT license)
+        // Modifications: tidy formatting and naming
         var result = [],
             visited = [],
             temp = [];
@@ -7409,6 +7382,9 @@ var Bounds = _dereq_('../geometry/Bounds');
 
     var _svgPathToAbsolute = function(path) {
         // http://phrogz.net/convert-svg-path-to-all-absolute-commands
+        // Copyright (c) Gavin Kistner
+        // http://phrogz.net/js/_ReuseLicense.txt
+        // Modifications: tidy formatting and naming
         var x0, y0, x1, y1, x2, y2, segs = path.pathSegList,
             x = 0, y = 0, len = segs.numberOfItems;
 
@@ -7864,7 +7840,7 @@ var Common = _dereq_('../core/Common');
             j;
 
         // find the polygon's moment of inertia, using second moment of area
-        // http://www.physicsforums.com/showthread.php?t=25293
+        // from equations at http://www.physicsforums.com/showthread.php?t=25293
         for (var n = 0; n < v.length; n++) {
             j = (n + 1) % v.length;
             cross = Math.abs(Vector.cross(v[j], v[n]));
@@ -8068,6 +8044,7 @@ var Common = _dereq_('../core/Common');
      */
     Vertices.isConvex = function(vertices) {
         // http://paulbourke.net/geometry/polygonmesh/
+        // Copyright (c) Paul Bourke (use permitted)
 
         var flag = 0,
             n = vertices.length,
@@ -8110,7 +8087,7 @@ var Common = _dereq_('../core/Common');
      * @return [vertex] vertices
      */
     Vertices.hull = function(vertices) {
-        // http://en.wikibooks.org/wiki/Algorithm_Implementation/Geometry/Convex_hull/Monotone_chain
+        // http://geomalgorithms.com/a10-_hull-1.html
 
         var upper = [],
             lower = [], 
@@ -8125,7 +8102,7 @@ var Common = _dereq_('../core/Common');
         });
 
         // build lower hull
-        for (i = 0; i < vertices.length; i++) {
+        for (i = 0; i < vertices.length; i += 1) {
             vertex = vertices[i];
 
             while (lower.length >= 2 
@@ -8137,7 +8114,7 @@ var Common = _dereq_('../core/Common');
         }
 
         // build upper hull
-        for (i = vertices.length - 1; i >= 0; i--) {
+        for (i = vertices.length - 1; i >= 0; i -= 1) {
             vertex = vertices[i];
 
             while (upper.length >= 2 
